@@ -77,7 +77,7 @@ echo "#################################"
 echo "##     Installing Langstone    ##"
 echo "#################################"
 
-git clone https://github.com/g4eml/Langstone.git
+git clone https://github.com/Radiomix2000/Langstone.git
 cd Langstone
 chmod +x build
 chmod +x run
