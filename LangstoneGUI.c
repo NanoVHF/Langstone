@@ -14,9 +14,7 @@
 #include "Morse.c"
 
 
-//#define PLUTOIP "ip:pluto.local"
-
-char plutoip[30];
+#define PLUTOIP "ip:pluto.local"
 
 const char *i2cNode1 = "/dev/i2c-1";        //linux i2c node for the Hyperpixel display on Pi 4
 const char *i2cNode2 = "/dev/i2c-11";       //linux i2c node for the Hyperpixel display on Pi 4
@@ -34,6 +32,7 @@ void setFMMic(int mic);
 void setRxFilter(int low,int high);
 void setTxFilter(int low,int high);
 void setBandBits(int b);
+void setSpkMute(int mute);
 void processTouch();
 void processMouse(int mbut);
 void initGUI();
@@ -123,8 +122,8 @@ enum {USB,LSB,CW,CWN,FM,AM};
 
 #define numSettings 18
 
-char * settingText[numSettings]={"Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","Repeater Shift= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits= ","Copy Band Bits to Pluto=","FFT Ref= ","Tx Att= ","S-Meter Zero= ", "SSB Rx Filter Low= ", "SSB Rx Filter High= ","CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= "};
-enum {RX_GAIN,SSB_MIC,FM_MIC,REP_SHIFT,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS,BAND_BITS_TO_PLUTO,FFT_REF,TX_ATT,S_ZERO,SSB_FILT_LOW,SSB_FILT_HIGH,CWID,CW_CARRIER,BREAK_IN_TIME};
+char * settingText[numSettings]={"Speaker Mute= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","Repeater Shift= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits= ","FFT Ref= ","Tx Att= ","S-Meter Zero= ", "SSB Rx Filter Low= ", "SSB Rx Filter High= ","CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= "};
+enum {SPK_MUTE,RX_GAIN,SSB_MIC,FM_MIC,REP_SHIFT,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS,FFT_REF,TX_ATT,S_ZERO,SSB_FILT_LOW,SSB_FILT_HIGH,CWID,CW_CARRIER,BREAK_IN_TIME};
 int settingNo=RX_GAIN;
 int setIndex=0;
 int maxSetIndex=10;
@@ -185,7 +184,7 @@ int sendBeacon=0;
 int dotCount=0;
 int transmitting=0;
 int dialLock=0;
-
+int mute=0;
 int keyDownTimer=0;
 int CWIDkeyDownTime=1000;                     //time to put key down between CW Idents (100 per second)
 
@@ -240,8 +239,6 @@ int portsdownPresent;
 int hyperPixelPresent;
 int MCP23017Present;
 
-int bandBitsToPluto=0;      //copy low 3 band bits to pluto IO1-IO3
-
 int popupSel=0;
 int popupFirstBand;
 enum {NONE,MODE,BAND,BEACON};
@@ -258,7 +255,7 @@ enum {NONE,MODE,BAND,BEACON};
 #define bandPin6 5      //Wiring Pi pin number. Physical pin is 18
 #define bandPin7 12     //Wiring Pi pin number. Physical pin is 19
 #define bandPin8 13     //Wiring Pi pin number. Physical pin is 21
-
+#define mutePin 16      //Wiring Pi pin number. Physical pin is 10
 #define i2cPttPin 0     //MCP23017 PTT Input if fitted  Port A bit 0
 #define i2cKeyPin 1     //MCP23017 Key Input if fitted  Port A bit 1
 #define i2cTxPin 7      //MCP23017 TX Output if fitted
@@ -288,16 +285,6 @@ struct iio_device *plutophy;
 
 int main(int argc, char* argv[])
 {
-  strcpy(plutoip,"ip:");
-  char * penv = getenv("PLUTO_IP");
-  if(penv==NULL)
-    {
-      strcpy(penv,"pluto.local");
-    }
-  strcat(plutoip,penv);
-
-  printf("plutoip = %s\n",plutoip);
-  
   fftstream=fopen("/tmp/langstonefft","r");                 //Open FFT Stream from GNU Radio 
   fcntl(fileno(fftstream), F_SETFL, O_RDONLY | O_NONBLOCK);
   
@@ -765,7 +752,7 @@ void displayError(char*st)
 
 void initPluto(void)
 {
-    plutoctx = iio_create_context_from_uri(plutoip);
+    plutoctx = iio_create_context_from_uri(PLUTOIP);
       if(plutoctx==NULL)
       {
         plutoPresent=0;
@@ -978,6 +965,7 @@ void initGPIO(void)
   pinMode(bandPin6,OUTPUT);  
   pinMode(bandPin7,OUTPUT);  
   pinMode(bandPin8,OUTPUT);  
+  pinMode(mutePin,OUTPUT);
   digitalWrite(txPin,LOW);
   digitalWrite(bandPin1,LOW);
   digitalWrite(bandPin1alt,LOW);  
@@ -986,8 +974,9 @@ void initGPIO(void)
   digitalWrite(bandPin4,LOW); 
   digitalWrite(bandPin5,LOW); 
   digitalWrite(bandPin6,LOW); 
-  digitalWrite(bandPin7,LOW); 
-  digitalWrite(bandPin8,LOW);       
+  digitalWrite(bandPin7,LOW);
+  digitalWrite(bandPin8,LOW);
+  digitalWrite(mutePin, LOW);
   lastKey=1;
   }
 }
@@ -1189,6 +1178,7 @@ void initGUI()
 
 void initSDR(void)
 {
+  setSpkMute(mute);
   setBand(band);
   setMode(mode); 
   setVolume(volume);
@@ -1675,7 +1665,6 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*5,funcButtonsY))    //Button 6 = BEAC
       }
       else if (inputMode==SETTINGS)
       {
-         setBandBits(0);
          clearScreen();
          iio_context_destroy(plutoctx);                  
          exit(0);
@@ -1723,7 +1712,6 @@ if(buttonTouched(funcButtonsX+buttonSpaceX*6,funcButtonsY))   //Button 7 = PTT  
       }
       else if (inputMode==SETTINGS)
       {
-      setBandBits(0);
       sendTxFifo("h");        //unlock the Tx so that it can exit
       sendRxFifo("h");        //and unlock the Rx just in case
       sendTxFifo("Q");       //kill the SDR Tx
@@ -2517,6 +2505,19 @@ setForeColour(0,255,0);
 displayButton("1750");
 }
 
+void setSpkMute(int mute)
+{
+	if (hyperPixelPresent == 0)                //dont use Raspberry Pi GPIO with Hyperpixel Display
+	{
+		if (mute==1)
+		{
+			digitalWrite(mutePin, LOW);
+		}
+		else
+			digitalWrite(mutePin, HIGH);
+	}
+}
+
 void setBandBits(int b)
 {
 if(hyperPixelPresent==0)                //dont use Raspberry Pi GPIO with Hyperpixel Display
@@ -2596,10 +2597,8 @@ if(hyperPixelPresent==0)                //dont use Raspberry Pi GPIO with Hyperp
         }       
   }
 
-//  copy bits 0,1 and 2to Pluto GPO Pins if enabled
+//  copy bits 0,1 and 2to Pluto GPO Pins
 
- if(bandBitsToPluto==1)
- {
   if(b & 0x01) 
       {
       plutoGpo=plutoGpo | 0x20;
@@ -2627,13 +2626,6 @@ if(hyperPixelPresent==0)                //dont use Raspberry Pi GPIO with Hyperp
       plutoGpo=plutoGpo & 0x7F;
       }   
   setPlutoGpo(plutoGpo);
- } 
- else
- {
-   plutoGpo=plutoGpo & 0x1F;
-   setPlutoGpo(plutoGpo);
- }
- 
   
 if(MCP23017Present==1)                       //optional extender chip has port b for band bits. 
   {
@@ -2644,6 +2636,22 @@ if(MCP23017Present==1)                       //optional extender chip has port b
 
 void changeSetting(void)
 {
+	if (settingNo == SPK_MUTE)   //Speaker mute-unmute
+	{
+		if(mouseScroll>0)
+		{
+			mute = 1;
+		}
+		
+		if(mouseScroll<0)
+		{
+			mute = 0;
+		}
+		mouseScroll = 0;
+		setSpkMute(mute);
+		displaySetting(settingNo);
+	}
+
   if(settingNo==SSB_MIC)        //SSB Mic Gain
       {
       SSBMic=SSBMic+mouseScroll;
@@ -2760,21 +2768,7 @@ void changeSetting(void)
       bbits=bandBits[band];
       setBandBits(bbits);
       displaySetting(settingNo);  
-      }  
-    if(settingNo==BAND_BITS_TO_PLUTO)        // Copy Band Bits to Pluto
-      {
-      if(mouseScroll>0)
-      {
-        bandBitsToPluto=1;
-      }
-      if(mouseScroll<0)
-      {
-         bandBitsToPluto=0;
-      }
-      mouseScroll=0;
-      displaySetting(settingNo);  
-      }       
-        
+      }    
    if(settingNo==FFT_REF)        // FFT Ref Level
       {
       FFTRef=FFTRef+mouseScroll;
@@ -3009,18 +3003,7 @@ if(se==REP_SHIFT)
         }
     } 
   }
-  if(se==BAND_BITS_TO_PLUTO)
-  {
-    if(bandBitsToPluto==1)
-      {
-      sprintf(valStr,"Yes");
-      }
-    else
-      {
-      sprintf(valStr,"No");
-      }
-   displayStr(valStr);  
-  } 
+  
   if(se==FFT_REF)
   {
   sprintf(valStr,"%d",FFTRef);
@@ -3031,6 +3014,21 @@ if(se==REP_SHIFT)
   sprintf(valStr,"%d dB",TxAtt);
   displayStr(valStr);
   }
+
+  if (se == SPK_MUTE)
+  {
+	  if(mute==1)
+	  {
+		  sprintf(valStr, "Yes");
+	  }
+	  if(mute==0)
+	  {
+		  sprintf(valStr, "No");
+	  }
+	  displayStr(valStr);
+	
+  }
+
   if(se==RX_GAIN)
   {
     if(bandRxGain[band]>maxGain(freq))
@@ -3175,7 +3173,7 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     if(strstr(variable,vname)) sscanf(value,"%d",&bandSSBFiltHigh[b]);     
     }
 
-    
+	if(strstr(variable,"SpkMute")) sscanf(value,"%d",&mute);
     if(strstr(variable,"currentBand")) sscanf(value,"%d",&band);
     if(strstr(variable,"tuneDigit")) sscanf(value,"%d",&tuneDigit);   
     if(strstr(variable,"mode")) sscanf(value,"%d",&mode);
@@ -3183,7 +3181,6 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     if(strstr(variable,"FMMic")) sscanf(value,"%d",&FMMic);
     if(strstr(variable,"volume")) sscanf(value,"%d",&volume);
     if(strstr(variable,"breakInTime")) sscanf(value,"%d",&breakInTime);
-    if(strstr(variable,"bandBitsToPluto")) sscanf(value,"%d",&bandBitsToPluto);
     if(mode>nummode-1) mode=0;
             
   }
@@ -3241,6 +3238,7 @@ for(int b=0;b<numband;b++)
   fprintf(conffile,"bandSSBFiltHigh%02d %d\n",b,bandSSBFiltHigh[b]);    
 }
 
+fprintf(conffile,"SpkMute %d\n",mute);
 fprintf(conffile,"currentBand %d\n",band);
 fprintf(conffile,"tuneDigit %d\n",tuneDigit);
 fprintf(conffile,"mode %d\n",mode);
@@ -3248,7 +3246,6 @@ fprintf(conffile,"SSBMic %d\n",SSBMic);
 fprintf(conffile,"FMMic %d\n",FMMic);
 fprintf(conffile,"volume %d\n",volume);
 fprintf(conffile,"breakInTime %d\n",breakInTime);
-fprintf(conffile,"bandBitsToPluto %d\n",bandBitsToPluto);
 
 fclose(conffile);
 return 0;
