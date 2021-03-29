@@ -1,3 +1,16 @@
+Change Log:
+
+2021.03.29
+- Added RX and TX bias-t menu and code to control GPIO pins to switch bias-t on/off
+(RX bias-t OFF/ON, TX bias-t OFF/Always ON/ON when TXing
+
+2021.03.14
+- Added AGC block to Gnuradio graph FM Mod circuit to make better modulation
+- Added to Settings menu "Speaker Mute" option to manually mute/unmute speaker when used line output (documentation and schematic diagram will be added later)
+- Some visually invisible changes
+
+*****************************************
+
 # Langstone SDR Transceiver by Colin Durbridge G4EML
 
 This is an experimental project to produce a simple VHF, UHF and Microwave SDR Transceiver operating on SSB CW and FM.

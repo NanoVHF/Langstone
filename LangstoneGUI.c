@@ -33,6 +33,8 @@ void setRxFilter(int low,int high);
 void setTxFilter(int low,int high);
 void setBandBits(int b);
 void setSpkMute(int mute);
+void setRXbiasT(int RXbiasT);
+void setTXbiasT(int TXbiasT);
 void processTouch();
 void processMouse(int mbut);
 void initGUI();
@@ -100,6 +102,8 @@ int bandRxHarmonic[numband]={1,1,1,1,1,1,1,1,1,1,1,1};
 int bandMode[numband]={0,0,0,0,0,0,0,0,0,0,0,0};
 int bandBits[numband]={0,1,2,3,4,5,6,7,8,9,10,11};
 int bandSquelch[numband]={30,30,30,30,30,30,30,30,30,30,30,30};
+int bandRXbiasT[numband] = {0,0,0,0,0,0,0,0,0,0,0,0};
+int bandTXbiasT[numband] = {0,0,0,0,0,0,0,0,0,0,0,0};
 int bandFFTRef[numband]={-10,-10,-10,-10,-10,-10,-10,-10,-10,-10,-10,-10};
 int bandTxAtt[numband]={0,0,0,0,0,0,0,0,0,0,0,0};
 int bandRxGain[numband]={100,100,100,100,100,100,100,100,100,100,100,100};              //100 is automatic gain
@@ -120,10 +124,10 @@ int mode=0;
 char * modename[nummode]={"USB","LSB","CW ","CWN","FM ","AM "};
 enum {USB,LSB,CW,CWN,FM,AM};
 
-#define numSettings 18
+#define numSettings 20
 
-char * settingText[numSettings]={"Speaker Mute= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","Repeater Shift= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits= ","FFT Ref= ","Tx Att= ","S-Meter Zero= ", "SSB Rx Filter Low= ", "SSB Rx Filter High= ","CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= "};
-enum {SPK_MUTE,RX_GAIN,SSB_MIC,FM_MIC,REP_SHIFT,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS,FFT_REF,TX_ATT,S_ZERO,SSB_FILT_LOW,SSB_FILT_HIGH,CWID,CW_CARRIER,BREAK_IN_TIME};
+char * settingText[numSettings]={"TX bias-t= ","RX bias-t= ","Speaker Mute= ","Rx Gain= ","SSB Mic Gain= ","FM Mic Gain= ","Repeater Shift= "," Rx Offset= ","Rx Harmonic Mixing= "," Tx Offset= ","Tx Harmonic Mixing= ","Band Bits= ","FFT Ref= ","Tx Att= ","S-Meter Zero= ", "SSB Rx Filter Low= ", "SSB Rx Filter High= ","CW Ident= ", "CWID Carrier= ", "CW Break-In Hang Time= "};
+enum {TX_BIAS,RX_BIAS,SPK_MUTE,RX_GAIN,SSB_MIC,FM_MIC,REP_SHIFT,RX_OFFSET,RX_HARMONIC,TX_OFFSET,TX_HARMONIC,BAND_BITS,FFT_REF,TX_ATT,S_ZERO,SSB_FILT_LOW,SSB_FILT_HIGH,CWID,CW_CARRIER,BREAK_IN_TIME};
 int settingNo=RX_GAIN;
 int setIndex=0;
 int maxSetIndex=10;
@@ -185,6 +189,9 @@ int dotCount=0;
 int transmitting=0;
 int dialLock=0;
 int mute=0;
+int RXbiasT = 0;
+int TXbiasT = 0;
+int TXbiasflag = 0;
 int keyDownTimer=0;
 int CWIDkeyDownTime=1000;                     //time to put key down between CW Idents (100 per second)
 
@@ -256,6 +263,8 @@ enum {NONE,MODE,BAND,BEACON};
 #define bandPin7 12     //Wiring Pi pin number. Physical pin is 19
 #define bandPin8 13     //Wiring Pi pin number. Physical pin is 21
 #define mutePin 16      //Wiring Pi pin number. Physical pin is 10
+#define RxbiasPin 21     //Wiring Pi pin number. Physical pin is 29
+#define TXbiasPin 30    //Wiring Pi pin number. Physical pin is 27
 #define i2cPttPin 0     //MCP23017 PTT Input if fitted  Port A bit 0
 #define i2cKeyPin 1     //MCP23017 Key Input if fitted  Port A bit 1
 #define i2cTxPin 7      //MCP23017 TX Output if fitted
@@ -966,6 +975,8 @@ void initGPIO(void)
   pinMode(bandPin7,OUTPUT);  
   pinMode(bandPin8,OUTPUT);  
   pinMode(mutePin,OUTPUT);
+  pinMode(RxbiasPin,OUTPUT);
+  pinMode(TXbiasPin, OUTPUT);
   digitalWrite(txPin,LOW);
   digitalWrite(bandPin1,LOW);
   digitalWrite(bandPin1alt,LOW);  
@@ -976,7 +987,9 @@ void initGPIO(void)
   digitalWrite(bandPin6,LOW); 
   digitalWrite(bandPin7,LOW);
   digitalWrite(bandPin8,LOW);
-  digitalWrite(mutePin, LOW);
+  digitalWrite(mutePin,LOW);
+  digitalWrite(RxbiasPin,LOW);
+  digitalWrite(TXbiasPin,LOW);
   lastKey=1;
   }
 }
@@ -1820,6 +1833,10 @@ void setBand(int b)
   setMode(mode);
   bbits=bandBits[band];
   setBandBits(bbits);
+  RXbiasT = bandRXbiasT[band];
+  setRXbiasT(RXbiasT);
+  TXbiasT = bandTXbiasT[band];
+  setTXbiasT(TXbiasT);
   squelch=bandSquelch[band];
   setSquelch(squelch);
   FFTRef=bandFFTRef[band];
@@ -2203,7 +2220,8 @@ void setTx(int pt)
       setForeColour(255,0,0);
       textSize=2;
       displayStr("Tx");
-      transmitting=1;  
+      transmitting=1;
+	  if (TXbiasflag == 1) digitalWrite(TXbiasPin, HIGH);
     }
   else if((pt==0)&&(transmitting==1))
     {
@@ -2226,6 +2244,7 @@ void setTx(int pt)
       textSize=2;
       displayStr("Rx");
       transmitting=0;
+	  if (TXbiasflag == 1) digitalWrite(TXbiasPin, LOW);
       usleep(RXDELAY);
       setTxPin(0);
       plutoGpo=plutoGpo & 0xEF;
@@ -2505,6 +2524,42 @@ setForeColour(0,255,0);
 displayButton("1750");
 }
 
+void setRXbiasT(int RXbiasT)
+{
+	if (hyperPixelPresent == 0)
+	{
+		if (RXbiasT == 1)
+		{
+			digitalWrite(RxbiasPin, HIGH);
+		}
+		else
+			digitalWrite(RxbiasPin, LOW);
+	}
+}
+
+void setTXbiasT(int TXbiasT)
+{
+	if (hyperPixelPresent == 0)
+	{
+		TXbiasT = bandTXbiasT[band];
+		{
+			TXbiasflag = 1;
+			digitalWrite(TXbiasPin, LOW);
+		}
+		if (TXbiasT == 1)
+		{
+			TXbiasflag = 0;
+			digitalWrite(TXbiasPin, HIGH);
+		}
+		if (TXbiasT == 0)
+		{
+			TXbiasflag = 0;
+			digitalWrite(TXbiasPin, LOW);
+		}
+	}
+}
+
+
 void setSpkMute(int mute)
 {
 	if (hyperPixelPresent == 0)                //dont use Raspberry Pi GPIO with Hyperpixel Display
@@ -2636,6 +2691,31 @@ if(MCP23017Present==1)                       //optional extender chip has port b
 
 void changeSetting(void)
 {
+	if (settingNo == RX_BIAS)
+	{
+		if (mouseScroll > 0)
+		{
+			bandRXbiasT[band] = 1;
+		}
+		if (mouseScroll < 0)
+		{
+			bandRXbiasT[band] = 0;
+		}
+		mouseScroll = 0;
+		setRXbiasT(bandRXbiasT[band]);
+		displaySetting(settingNo);
+	}
+
+	if (settingNo == TX_BIAS)
+	{
+		bandTXbiasT[band] = bandTXbiasT[band] + mouseScroll;
+		mouseScroll = 0;
+		if (bandTXbiasT[band] < 0) bandTXbiasT[band] = 0;
+		if (bandTXbiasT[band] > 2) bandTXbiasT[band] = 2;
+		setTXbiasT(bandTXbiasT[band]);
+		displaySetting(settingNo);
+	}
+
 	if (settingNo == SPK_MUTE)   //Speaker mute-unmute
 	{
 		if(mouseScroll>0)
@@ -3015,6 +3095,36 @@ if(se==REP_SHIFT)
   displayStr(valStr);
   }
 
+  if (se == RX_BIAS)
+  {
+	  if (bandRXbiasT[band] == 0)
+	  {
+		  sprintf(valStr, "Off");
+	  }
+	  if (bandRXbiasT[band] == 1)
+	  {
+		  sprintf(valStr, "On");
+	  }
+	  displayStr(valStr);
+  }
+
+  if (se == TX_BIAS)
+  {
+	  if (bandTXbiasT[band] == 0)
+	  {
+		  sprintf(valStr, "Off");
+	  }
+	  if (bandTXbiasT[band] == 1)
+	  {
+		  sprintf(valStr, "Always On");
+	  }
+	  if (bandTXbiasT[band] == 2)
+	  {
+		  sprintf(valStr, "On while TXing");
+	  }
+	  displayStr(valStr);
+  }
+
   if (se == SPK_MUTE)
   {
 	  if(mute==1)
@@ -3170,10 +3280,14 @@ while(fscanf(conffile,"%49s %99s [^\n]\n",variable,value) !=EOF)
     sprintf(vname,"bandSSBFiltLow%02d",b);
     if(strstr(variable,vname)) sscanf(value,"%d",&bandSSBFiltLow[b]); 
     sprintf(vname,"bandSSBFiltHigh%02d",b);
-    if(strstr(variable,vname)) sscanf(value,"%d",&bandSSBFiltHigh[b]);     
+    if(strstr(variable,vname)) sscanf(value,"%d",&bandSSBFiltHigh[b]);  
+	sprintf(vname, "bandRXbiasT%02d", b);
+	if(strstr(variable, vname)) sscanf(value, "%d", &bandRXbiasT[b]);
+	sprintf(vname, "bandTXbiasT%02d", b);
+	if(strstr(variable, vname)) sscanf(value, "%d", &bandTXbiasT[b]);
     }
 
-	if(strstr(variable,"SpkMute")) sscanf(value,"%d",&mute);
+    if(strstr(variable,"SpkMute")) sscanf(value,"%d",&mute);
     if(strstr(variable,"currentBand")) sscanf(value,"%d",&band);
     if(strstr(variable,"tuneDigit")) sscanf(value,"%d",&tuneDigit);   
     if(strstr(variable,"mode")) sscanf(value,"%d",&mode);
@@ -3235,7 +3349,9 @@ for(int b=0;b<numband;b++)
   fprintf(conffile,"bandRxGain%02d %d\n",b,bandRxGain[b]);
   fprintf(conffile,"bandSmeterZero%02d %f\n",b,bandSmeterZero[b]);
   fprintf(conffile,"bandSSBFiltLow%02d %d\n",b,bandSSBFiltLow[b]);
-  fprintf(conffile,"bandSSBFiltHigh%02d %d\n",b,bandSSBFiltHigh[b]);    
+  fprintf(conffile,"bandSSBFiltHigh%02d %d\n",b,bandSSBFiltHigh[b]);
+  fprintf(conffile,"bandRXbiasT%02d %d\n", b, bandRXbiasT[b]);
+  fprintf(conffile,"bandTXbiasT%02d %d\n", b, bandTXbiasT[b]);
 }
 
 fprintf(conffile,"SpkMute %d\n",mute);
