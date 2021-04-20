@@ -211,7 +211,7 @@ long progStartTime=0;
 
 int lastKey=1;
 
-int volume=20;
+int volume=0;
 #define maxvol 100
 
 int squelch=20;
@@ -2542,6 +2542,7 @@ void setTXbiasT(int TXbiasT)
 	if (hyperPixelPresent == 0)
 	{
 		TXbiasT = bandTXbiasT[band];
+		if (TXbiasT == 2)
 		{
 			TXbiasflag = 1;
 			digitalWrite(TXbiasPin, LOW);
