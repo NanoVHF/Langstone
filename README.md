@@ -1,6 +1,6 @@
 Change Log:
 
-28.04.2020
+2021.04.28
 - Added DMR receive mode
 
 2021.03.29
