@@ -1,5 +1,8 @@
 Change Log:
 
+28.04.2020
+- Added DMR receive mode
+
 2021.03.29
 - Added RX and TX bias-t menu and code to control GPIO pins to switch bias-t on/off
 (RX bias-t OFF/ON, TX bias-t OFF/Always ON/ON when TXing
