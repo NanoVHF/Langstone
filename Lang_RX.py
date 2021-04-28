@@ -19,7 +19,7 @@ from gnuradio.fft import logpwrfft
 from gnuradio.filter import firdes
 from grc_gnuradio import blks2 as grc_blks2
 from optparse import OptionParser
-
+import dsd
 
 class Lang_RX(gr.top_block):
 
@@ -85,6 +85,14 @@ class Lang_RX(gr.top_block):
         	tau=75e-6,
         	max_dev=5e3,
           )
+        self.blocks_multiply_const_vxx_6 = blocks.multiply_const_vff((Mode==6, ))
+        self.dsd_block_ff_0 = dsd.dsd_block_ff(dsd.dsd_FRAME_DMR_MOTOTRBO,dsd.dsd_MOD_AUTO_SELECT,3,False,0)
+        self.rational_resampler_xxx_0 = filter.rational_resampler_fff(
+        interpolation=6,
+        decimation=1,
+        taps=None,
+        fractional_bw=None,
+        )
         self.analog_agc3_xx_0 = analog.agc3_cc(1e-2, 5e-7, 0.1, 1.0, 1)
         self.analog_agc3_xx_0.set_max_gain(1000)
 
@@ -108,6 +116,10 @@ class Lang_RX(gr.top_block):
         self.connect((self.blocks_multiply_const_vxx_1, 0), (self.audio_sink_0, 0))
         self.connect((self.blocks_multiply_const_vxx_2, 0), (self.blocks_add_xx_1_0, 0))
         self.connect((self.blocks_multiply_const_vxx_2_0, 0), (self.blocks_add_xx_1, 1))
+        self.connect((self.analog_nbfm_rx_0, 0), (self.blocks_multiply_const_vxx_6, 0))
+        self.connect((self.blocks_multiply_const_vxx_6, 0), (self.dsd_block_ff_0, 0))
+        self.connect((self.dsd_block_ff_0, 0), (self.rational_resampler_xxx_0, 0))
+        self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_add_xx_1, 2))
         self.connect((self.blocks_multiply_const_vxx_2_1, 0), (self.blocks_add_xx_1_0, 1))
         self.connect((self.freq_xlating_fir_filter_xxx_0, 0), (self.band_pass_filter_0, 0))
         self.connect((self.freq_xlating_fir_filter_xxx_0, 0), (self.logpwrfft_x_0, 0))
@@ -142,6 +154,7 @@ class Lang_RX(gr.top_block):
         self.Mode = Mode
         self.blocks_multiply_const_vxx_2_1.set_k((self.Mode==5, ))
         self.blocks_multiply_const_vxx_2_0.set_k((self.Mode==4, ))
+        self.blocks_multiply_const_vxx_6.set_k((self.Mode==6, ))
         self.blocks_multiply_const_vxx_2.set_k((self.Mode<4, ))
 
     def get_Filt_Low(self):
